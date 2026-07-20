@@ -27,6 +27,13 @@ CREATE TABLE IF NOT EXISTS asset_categories (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS asset_tags (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS request_tags (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -111,6 +118,12 @@ CREATE TABLE IF NOT EXISTS ai_asset_access_requests (
   UNIQUE (asset_id, requester_id)
 );
 
+CREATE TABLE IF NOT EXISTS ai_asset_tag_relations (
+  asset_id INTEGER NOT NULL REFERENCES ai_assets(id) ON DELETE CASCADE,
+  tag_id INTEGER NOT NULL REFERENCES asset_tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (asset_id, tag_id)
+);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id SERIAL PRIMARY KEY,
   recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -163,6 +176,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_wbs ON projects(wbs_code);
 CREATE INDEX IF NOT EXISTS idx_projects_o2e ON projects(o2e_code);
 CREATE INDEX IF NOT EXISTS idx_assets_status ON ai_assets(status);
 CREATE INDEX IF NOT EXISTS idx_assets_visibility ON ai_assets(visibility);
+CREATE INDEX IF NOT EXISTS idx_asset_tag_relations_tag ON ai_asset_tag_relations(tag_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id, read_at, created_at);
 
 ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS preview_image_data TEXT;

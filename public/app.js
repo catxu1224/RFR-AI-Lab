@@ -78,6 +78,7 @@ function bindGlobalEvents() {
     if (action === 'new-user') return openUserModal();
     if (action === 'edit-user') return openUserModal(id);
     if (action === 'delete-user') return deleteUser(id);
+    if (action === 'new-parameter') return openParameterModal(target.dataset.kind);
     if (action === 'edit-parameter') return openParameterModal(target.dataset.kind, id);
     if (action === 'delete-parameter') return deleteParameter(target.dataset.kind, id);
     if (action === 'knowledge-search') return knowledgeSearch();
@@ -260,6 +261,7 @@ async function renderAssets() {
   const params = new URLSearchParams({
     search: form.get('search') || '',
     categoryId: form.get('categoryId') || '',
+    tagId: form.get('tagId') || '',
     visibility: form.get('visibility') || '',
     status: form.get('status') || 'online'
   });
@@ -270,9 +272,10 @@ async function renderAssets() {
       <button class="btn" data-action="new-asset">发布AI资产</button>
       <button class="btn secondary">访问申请审批</button>
     `)}
-    <form class="filter asset-filter-sticky" id="assetFilters">
+    <form class="filter asset-filter-sticky asset-filter" id="assetFilters">
       <input name="search" placeholder="搜索资产名称、负责人、描述" value="${h(params.get('search'))}">
       <select name="categoryId"><option value="">全部资产分类</option>${options(state.meta.assetCategories, params.get('categoryId'))}</select>
+      <select name="tagId"><option value="">全部资产标签</option>${options(state.meta.assetTags, params.get('tagId'))}</select>
       <select name="visibility"><option value="">全部公开状态</option><option value="public" ${selected(params.get('visibility'), 'public')}>公开</option><option value="private" ${selected(params.get('visibility'), 'private')}>非公开</option></select>
       <select name="status"><option value="online" ${selected(params.get('status'), 'online')}>在线资产</option><option value="retired" ${selected(params.get('status'), 'retired')}>注销资产</option><option value="">全部状态</option></select>
       <button class="btn">查询</button>
@@ -285,12 +288,13 @@ async function renderAssets() {
       ? `<section class="asset-card-view mt">${pagedCards(data.assets, assetCard, 'assetCards', 'asset-grid')}</section>`
       : `<section class="asset-list mt">
           ${table(
-            ['资产名称', '资产描述', '负责人', '分类', '公开状态', '当前状态', '浏览量', '操作'],
+            ['资产名称', '资产描述', '负责人', '分类', '标签', '公开状态', '当前状态', '浏览量', '操作'],
             data.assets.map((a) => [
               h(a.asset_name),
               clippedText(a.description || '-'),
               h(a.owner_name || '-'),
               h(a.category_name || '-'),
+              tagList(a.tags) || '-',
               a.visibility === 'public' ? badge('公开') : badge('非公开', 'warn'),
               a.status === 'online' ? badge('在线') : badge('注销', 'off'),
               h(a.views),
@@ -477,12 +481,13 @@ async function adminLogs() {
 function adminParameters() {
   const projectList = state.meta.projectCategories;
   const assetList = state.meta.assetCategories;
+  const assetTagList = state.meta.assetTags || [];
   return {
-    head: pageHead('系统管理 / 参数信息维护', '统一维护项目分类、资产分类等系统参数，后续可继续扩展更多参数字典。', `<button class="btn">新增参数</button>`),
+    head: pageHead('系统管理 / 参数信息维护', '统一维护项目分类、资产分类和资产标签等系统参数，后续可继续扩展更多参数字典。', `<button class="btn" data-action="new-parameter" data-kind="assetTag">新增资产标签</button>`),
     body: `
-      <div class="grid cols-2">
+      <div class="grid cols-3">
         <section class="panel">
-          <div class="panel-title">项目分类</div>
+          <div class="panel-title">项目分类 <button class="btn slim secondary" data-action="new-parameter" data-kind="project">新增</button></div>
           <div class="panel-body">
             ${table(
               ['分类名称', '参数类型', '操作'],
@@ -496,7 +501,7 @@ function adminParameters() {
           </div>
         </section>
         <section class="panel">
-          <div class="panel-title">资产分类</div>
+          <div class="panel-title">资产分类 <button class="btn slim secondary" data-action="new-parameter" data-kind="asset">新增</button></div>
           <div class="panel-body">
             ${table(
               ['分类名称', '参数类型', '操作'],
@@ -506,6 +511,20 @@ function adminParameters() {
                 parameterActions('asset', x.id)
               ]),
               { pageKey: 'assetParameters' }
+            )}
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-title">资产标签 <button class="btn slim secondary" data-action="new-parameter" data-kind="assetTag">新增</button></div>
+          <div class="panel-body">
+            ${table(
+              ['标签名称', '参数类型', '操作'],
+              assetTagList.map((x) => [
+                h(x.name),
+                h('资产标签'),
+                parameterActions('assetTag', x.id)
+              ]),
+              { pageKey: 'assetTagParameters' }
             )}
           </div>
         </section>
@@ -620,20 +639,21 @@ async function openUserModal(id) {
 }
 
 async function openParameterModal(kind, id) {
-  const list = kind === 'project' ? state.meta.projectCategories : state.meta.assetCategories;
-  const item = list.find((x) => Number(x.id) === Number(id)) || {};
-  openModal(`${kind === 'project' ? '项目分类' : '资产分类'}维护`, `
+  const label = parameterKindLabel(kind);
+  const list = parameterList(kind);
+  const item = id ? list.find((x) => Number(x.id) === Number(id)) || {} : {};
+  openModal(id ? `${label}维护` : `新增${label}`, `
     <form id="parameterForm" class="form-grid">
-      <div class="field"><span class="label">参数类型</span><input value="${kind === 'project' ? '项目分类' : '资产分类'}" disabled></div>
-      <div class="field"><span class="label">参数ID</span><input value="${h(item.id || '')}" disabled></div>
-      <div class="field full"><span class="label">分类名称</span><input name="name" value="${h(item.name || '')}" required></div>
+      <div class="field"><span class="label">参数类型</span><input value="${h(label)}" disabled></div>
+      <div class="field"><span class="label">参数ID</span><input value="${h(item.id || '自动生成')}" disabled></div>
+      <div class="field full"><span class="label">参数名称</span><input name="name" value="${h(item.name || '')}" required></div>
       <div class="field full"><button class="btn">保存参数</button></div>
     </form>
   `);
   document.querySelector('#parameterForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const body = Object.fromEntries(new FormData(event.target).entries());
-    await api(`/api/parameters/${kind}/${id}`, { method: 'PATCH', body });
+    await api(id ? `/api/parameters/${kind}/${id}` : `/api/parameters/${kind}`, { method: id ? 'PATCH' : 'POST', body });
     await loadBase();
     showToast('参数已保存');
     closeModal();
@@ -710,6 +730,7 @@ async function openAssetDetailModal(id) {
       <div class="detail-item"><span class="label">公开状态</span><b>${asset.visibility === 'public' ? '公开' : '非公开'}</b></div>
       <div class="detail-item"><span class="label">当前状态</span><b>${asset.status === 'online' ? '在线' : '注销'}</b></div>
       <div class="detail-item"><span class="label">浏览量</span><b>${h(asset.views || 0)}</b></div>
+      <div class="detail-item full"><span class="label">资产标签</span><div>${tagList(asset.tags) || '-'}</div></div>
       <div class="detail-item full"><span class="label">访问/下载链接</span><div>${h(asset.access_url || asset.download_url || '-')}</div></div>
       <div class="detail-item full"><span class="label">资产描述</span><div class="detail-text">${h(asset.description || '-')}</div></div>
     </div>
@@ -737,6 +758,7 @@ async function saveQuickAsset(event) {
   const body = Object.fromEntries(form.entries());
   delete body.preview_file;
   delete body.logo_file;
+  body.tag_ids = form.getAll('tag_ids').filter(Boolean);
   const logoFile = event.target.querySelector('input[name="logo_file"]')?.files?.[0];
   const previewFile = event.target.querySelector('input[name="preview_file"]')?.files?.[0];
   if (logoFile) {
@@ -907,14 +929,19 @@ function assetCard(asset) {
   const visibility = asset.visibility === 'public' ? badge('公开') : badge('非公开', 'warn');
   const status = asset.status === 'online' ? badge('在线') : badge('注销', 'off');
   return `<div class="asset-card">
-    <div class="asset-title">${assetLogo(asset)}${h(asset.asset_name)}</div>
+    <div class="asset-title">
+      <div class="asset-title-main">${assetLogo(asset)}<span>${h(asset.asset_name)}</span></div>
+      <div class="asset-views"><span>浏览量</span><b>${h(asset.views || 0)}</b></div>
+    </div>
     <div class="asset-card-fields">
+      <div class="asset-meta-row">
+        <div class="asset-field"><span>负责人</span><b>${h(asset.owner_name || '-')}</b></div>
+        <div class="asset-field"><span>分类</span><b>${h(asset.category_name || '-')}</b></div>
+        <div class="asset-field"><span>公开状态</span>${visibility}</div>
+        <div class="asset-field"><span>当前状态</span>${status}</div>
+      </div>
       <div class="asset-field full"><span>资产描述</span><p>${h(asset.description || '-')}</p></div>
-      <div class="asset-field"><span>负责人</span><b>${h(asset.owner_name || '-')}</b></div>
-      <div class="asset-field"><span>分类</span><b>${h(asset.category_name || '-')}</b></div>
-      <div class="asset-field"><span>公开状态</span>${visibility}</div>
-      <div class="asset-field"><span>当前状态</span>${status}</div>
-      <div class="asset-field"><span>浏览量</span><b>${h(asset.views || 0)}</b></div>
+      <div class="asset-field full"><span>标签</span><div class="asset-tags">${tagList(asset.tags) || '-'}</div></div>
     </div>
     <div class="asset-card-actions">${assetActions(asset)}</div>
   </div>`;
@@ -1046,6 +1073,17 @@ function userActions(u) {
   </div>`;
 }
 
+function parameterKindLabel(kind) {
+  return { project: '项目分类', asset: '资产分类', assetTag: '资产标签' }[kind] || '参数';
+}
+
+function parameterList(kind) {
+  if (kind === 'project') return state.meta.projectCategories || [];
+  if (kind === 'asset') return state.meta.assetCategories || [];
+  if (kind === 'assetTag') return state.meta.assetTags || [];
+  return [];
+}
+
 function parameterActions(kind, id) {
   return `<div class="row-actions">
     <button class="btn slim secondary" data-action="edit-parameter" data-kind="${h(kind)}" data-id="${id}">查看/编辑</button>
@@ -1070,6 +1108,7 @@ function assetQuickForm(id = 'quickAssetForm', asset = {}) {
     <div class="field full"><span class="label">资产名称</span><input name="asset_name" required placeholder="例如 Report Agent" value="${h(asset.asset_name || '')}"></div>
     <div class="field"><span class="label">资产分类</span><select name="category_id">${options(state.meta.assetCategories, asset.category_id)}</select></div>
     <div class="field"><span class="label">公开设置</span><select name="visibility"><option value="public" ${selected(asset.visibility, 'public')}>公开：展示访问入口</option><option value="private" ${selected(asset.visibility, 'private')}>不公开：需要申请查看</option></select></div>
+    <div class="field full"><span class="label">资产标签</span><select name="tag_ids" multiple size="3">${multiOptions(state.meta.assetTags, (asset.tags || []).map((tag) => tag.id))}</select></div>
     <div class="field full"><span class="label">访问/下载链接</span><input name="access_url" placeholder="https://..." value="${h(asset.access_url || asset.download_url || '')}"></div>
     <div class="field full"><span class="label">上传Logo</span><input name="logo_file" type="file" accept="image/*">${asset.logo_image_name ? `<span class="label">当前Logo：${h(asset.logo_image_name)}</span>` : ''}</div>
     <div class="field full"><span class="label">上传预览图</span><input name="preview_file" type="file" accept="image/*">${asset.preview_image_name ? `<span class="label">当前预览图：${h(asset.preview_image_name)}</span>` : ''}</div>
@@ -1104,6 +1143,11 @@ function adminButton(sub, label) {
 
 function options(items, selectedId = '') {
   return (items || []).map((item) => `<option value="${item.id}" ${selected(String(selectedId || ''), String(item.id))}>${h(item.name)}</option>`).join('');
+}
+
+function multiOptions(items, selectedIds = []) {
+  const selectedSet = new Set((selectedIds || []).map((id) => String(id)));
+  return (items || []).map((item) => `<option value="${item.id}" ${selectedSet.has(String(item.id)) ? 'selected' : ''}>${h(item.name)}</option>`).join('');
 }
 
 function userOptions(selectedId = '') {

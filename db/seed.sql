@@ -16,6 +16,12 @@ INSERT INTO asset_categories (name, sort_order) VALUES
   ('其他', 3)
 ON CONFLICT (name) DO UPDATE SET sort_order = EXCLUDED.sort_order;
 
+INSERT INTO asset_tags (name, sort_order) VALUES
+  ('文档生成', 1),
+  ('数据分析', 2),
+  ('交付助手', 3)
+ON CONFLICT (name) DO UPDATE SET sort_order = EXCLUDED.sort_order;
+
 UPDATE request_tags
 SET name = 'AI资产',
     description = '开发可复用 AI 工具、AI Agent 或资产，并通过资产形式交付给客户或组内使用。'
@@ -112,6 +118,15 @@ ON CONFLICT (id) DO UPDATE SET
   version = EXCLUDED.version;
 
 SELECT SETVAL('ai_assets_id_seq', (SELECT MAX(id) FROM ai_assets));
+
+INSERT INTO ai_asset_tag_relations (asset_id, tag_id) VALUES
+  (1, 1), (1, 3),
+  (2, 1),
+  (3, 2),
+  (4, 2), (4, 3),
+  (5, 1),
+  (6, 2)
+ON CONFLICT DO NOTHING;
 
 INSERT INTO ai_asset_access_requests (asset_id, requester_id, status, reason, reviewed_by, reviewed_at) VALUES
   (4, 2, 'approved', '用于数据治理蓝图项目复用。', 6, NOW()),

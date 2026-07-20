@@ -46,6 +46,13 @@ async function ensureBaseData(client) {
     ON CONFLICT (name) DO NOTHING
   `);
   await client.query(`
+    INSERT INTO asset_tags (name, sort_order) VALUES
+      ('文档生成', 1),
+      ('数据分析', 2),
+      ('交付助手', 3)
+    ON CONFLICT (name) DO NOTHING
+  `);
+  await client.query(`
     INSERT INTO request_tags (name, description, sort_order) VALUES
       ('AI Consulting Project', 'Client-facing AI consulting project request.', 1),
       ('AI Delivery Accelerator', 'Internal AI tool or automation for delivery acceleration.', 2),

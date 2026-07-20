@@ -83,10 +83,11 @@ app.get('/api/me', (req, res) => {
 });
 
 app.get('/api/meta', asyncHandler(async (_req, res) => {
-  const [users, projectCategories, assetCategories, tags, projects] = await Promise.all([
+  const [users, projectCategories, assetCategories, assetTags, tags, projects] = await Promise.all([
     query('SELECT id, chinese_name, english_name, email, level, role FROM users WHERE status = $1 ORDER BY id', ['active']),
     query('SELECT id, name FROM project_categories ORDER BY sort_order, id'),
     query('SELECT id, name FROM asset_categories ORDER BY sort_order, id'),
+    query('SELECT id, name FROM asset_tags ORDER BY sort_order, id'),
     query('SELECT id, name, description FROM request_tags ORDER BY sort_order, id'),
     query('SELECT id, o2e_code, wbs_code, customer_name, project_name FROM projects ORDER BY id')
   ]);
@@ -94,6 +95,7 @@ app.get('/api/meta', asyncHandler(async (_req, res) => {
     users: users.rows,
     projectCategories: projectCategories.rows,
     assetCategories: assetCategories.rows,
+    assetTags: assetTags.rows,
     tags: tags.rows,
     projects: projects.rows
   });
@@ -245,6 +247,7 @@ app.get('/api/assets', asyncHandler(async (req, res) => {
   const visibility = req.query.visibility || '';
   const status = req.query.status || 'online';
   const categoryId = toInt(req.query.categoryId);
+  const tagId = toInt(req.query.tagId);
   const params = [search];
   const filters = [`(a.asset_name ILIKE $1 OR a.description ILIKE $1 OR u.chinese_name ILIKE $1 OR u.english_name ILIKE $1)`];
   if (visibility) {
@@ -259,6 +262,10 @@ app.get('/api/assets', asyncHandler(async (req, res) => {
     params.push(categoryId);
     filters.push(`a.category_id = $${params.length}`);
   }
+  if (tagId) {
+    params.push(tagId);
+    filters.push(`EXISTS (SELECT 1 FROM ai_asset_tag_relations atr WHERE atr.asset_id = a.id AND atr.tag_id = $${params.length})`);
+  }
   const result = await query(assetListSql(`WHERE ${filters.join(' AND ')}`, 'ORDER BY views DESC, a.id'), params);
   res.json({ assets: result.rows });
 }));
@@ -272,28 +279,33 @@ app.get('/api/assets/:id', asyncHandler(async (req, res) => {
 
 app.post('/api/assets', asyncHandler(async (req, res) => {
   const body = req.body;
-  const result = await query(
-    `INSERT INTO ai_assets (asset_name, owner_id, request_id, category_id, project_id, description, access_url, download_url, logo_image_data, logo_image_name, preview_image_data, preview_image_name, visibility, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'online')
-     RETURNING *`,
-    [
-      body.asset_name,
-      req.user.id,
-      toInt(body.request_id),
-      toInt(body.category_id),
-      toInt(body.project_id),
-      body.description || '',
-      body.access_url || null,
-      body.download_url || null,
-      body.logo_image_data || null,
-      body.logo_image_name || null,
-      body.preview_image_data || null,
-      body.preview_image_name || null,
-      body.visibility || 'public'
-    ]
-  );
-  await query('INSERT INTO audit_logs (entity_type, entity_id, action, detail, actor_id) VALUES ($1, $2, $3, $4, $5)', ['asset', result.rows[0].id, '发布资产', body.asset_name, req.user.id]);
-  res.status(201).json({ asset: result.rows[0] });
+  const created = await withTransaction(async (client) => {
+    const result = await client.query(
+      `INSERT INTO ai_assets (asset_name, owner_id, request_id, category_id, project_id, description, access_url, download_url, logo_image_data, logo_image_name, preview_image_data, preview_image_name, visibility, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'online')
+       RETURNING *`,
+      [
+        body.asset_name,
+        req.user.id,
+        toInt(body.request_id),
+        toInt(body.category_id),
+        toInt(body.project_id),
+        body.description || '',
+        body.access_url || null,
+        body.download_url || null,
+        body.logo_image_data || null,
+        body.logo_image_name || null,
+        body.preview_image_data || null,
+        body.preview_image_name || null,
+        body.visibility || 'public'
+      ]
+    );
+    await syncAssetTags(client, result.rows[0].id, body.tag_ids || []);
+    await client.query('INSERT INTO audit_logs (entity_type, entity_id, action, detail, actor_id) VALUES ($1, $2, $3, $4, $5)', ['asset', result.rows[0].id, '发布资产', body.asset_name, req.user.id]);
+    const detail = await client.query(assetListSql('WHERE a.id = $1'), [result.rows[0].id]);
+    return detail.rows[0];
+  });
+  res.status(201).json({ asset: created });
 }));
 
 app.patch('/api/assets/:id', asyncHandler(async (req, res) => {
@@ -303,11 +315,17 @@ app.patch('/api/assets/:id', asyncHandler(async (req, res) => {
   if (!canMaintainAsset(req.user, current.rows[0])) return res.status(403).json({ error: '不能维护非本人负责的资产' });
   const allowed = ['asset_name', 'description', 'access_url', 'download_url', 'logo_image_data', 'logo_image_name', 'preview_image_data', 'preview_image_name', 'visibility', 'status', 'category_id', 'project_id', 'version'];
   const { sets, values } = buildSetClause(allowed, req.body);
-  if (!sets.length) return res.json({ asset: current.rows[0] });
-  values.push(id);
-  const result = await query(`UPDATE ai_assets SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`, values);
-  await query('INSERT INTO audit_logs (entity_type, entity_id, action, detail, actor_id) VALUES ($1, $2, $3, $4, $5)', ['asset', id, '资产维护', JSON.stringify(req.body), req.user.id]);
-  res.json({ asset: result.rows[0] });
+  const updated = await withTransaction(async (client) => {
+    if (sets.length) {
+      values.push(id);
+      await client.query(`UPDATE ai_assets SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${values.length}`, values);
+    }
+    if (Array.isArray(req.body.tag_ids)) await syncAssetTags(client, id, req.body.tag_ids);
+    await client.query('INSERT INTO audit_logs (entity_type, entity_id, action, detail, actor_id) VALUES ($1, $2, $3, $4, $5)', ['asset', id, '资产维护', JSON.stringify(req.body), req.user.id]);
+    const result = await client.query(assetListSql('WHERE a.id = $1'), [id]);
+    return result.rows[0] || current.rows[0];
+  });
+  res.json({ asset: updated });
 }));
 
 app.post('/api/assets/:id/view', asyncHandler(async (req, res) => {
@@ -592,6 +610,18 @@ app.delete('/api/users/:id', asyncHandler(async (req, res) => {
   res.json({ user: result.rows[0] });
 }));
 
+app.post('/api/parameters/:kind', asyncHandler(async (req, res) => {
+  requireAdmin(req.user);
+  const config = parameterCategoryConfig(req.params.kind);
+  if (!config) return res.status(404).json({ error: '参数类型不存在' });
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: '请填写参数名称' });
+  const nextOrder = await query(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS sort_order FROM ${config.table}`);
+  const result = await query(`INSERT INTO ${config.table} (name, sort_order) VALUES ($1, $2) RETURNING id, name, sort_order`, [name, nextOrder.rows[0].sort_order]);
+  await query('INSERT INTO audit_logs (entity_type, entity_id, action, detail, actor_id) VALUES ($1,$2,$3,$4,$5)', [config.entity, result.rows[0].id, '新增参数', name, req.user.id]);
+  res.status(201).json({ parameter: result.rows[0] });
+}));
+
 app.patch('/api/parameters/:kind/:id', asyncHandler(async (req, res) => {
   requireAdmin(req.user);
   const config = parameterCategoryConfig(req.params.kind);
@@ -610,9 +640,9 @@ app.delete('/api/parameters/:kind/:id', asyncHandler(async (req, res) => {
   const config = parameterCategoryConfig(req.params.kind);
   if (!config) return res.status(404).json({ error: '参数类型不存在' });
   const id = toInt(req.params.id);
-  const usage = await query(`SELECT COUNT(*)::INT AS count FROM ${config.usageTable} WHERE category_id = $1`, [id]);
+  const usage = await query(config.usageSql, [id]);
   if (usage.rows[0].count > 0) {
-    return res.status(400).json({ error: `该分类已被${config.usageLabel}使用，不能删除` });
+    return res.status(400).json({ error: `该参数已被${config.usageLabel}使用，不能删除` });
   }
   const result = await query(`DELETE FROM ${config.table} WHERE id = $1 RETURNING id, name`, [id]);
   if (!result.rowCount) return res.status(404).json({ error: '参数不存在或已删除' });
@@ -671,8 +701,24 @@ function usernameFromEmail(email) {
 
 function parameterCategoryConfig(kind) {
   const configs = {
-    project: { table: 'project_categories', entity: 'project_category', usageTable: 'projects', usageLabel: '项目' },
-    asset: { table: 'asset_categories', entity: 'asset_category', usageTable: 'ai_assets', usageLabel: '资产' }
+    project: {
+      table: 'project_categories',
+      entity: 'project_category',
+      usageSql: 'SELECT COUNT(*)::INT AS count FROM projects WHERE category_id = $1',
+      usageLabel: '项目'
+    },
+    asset: {
+      table: 'asset_categories',
+      entity: 'asset_category',
+      usageSql: 'SELECT COUNT(*)::INT AS count FROM ai_assets WHERE category_id = $1',
+      usageLabel: '资产'
+    },
+    assetTag: {
+      table: 'asset_tags',
+      entity: 'asset_tag',
+      usageSql: 'SELECT COUNT(*)::INT AS count FROM ai_asset_tag_relations WHERE tag_id = $1',
+      usageLabel: '资产'
+    }
   };
   return configs[kind] || null;
 }
@@ -725,13 +771,16 @@ function assetListSql(whereClause = '', orderClause = '', includePreview = false
     p.project_name,
     r.request_code,
     r.title AS request_title,
-    COUNT(v.id)::INT AS views
+    COALESCE(JSON_AGG(DISTINCT JSONB_BUILD_OBJECT('id', at.id, 'name', at.name)) FILTER (WHERE at.id IS NOT NULL), '[]') AS tags,
+    COUNT(DISTINCT v.id)::INT AS views
    FROM ai_assets a
    LEFT JOIN users u ON u.id = a.owner_id
    LEFT JOIN asset_categories ac ON ac.id = a.category_id
    LEFT JOIN projects p ON p.id = a.project_id
    LEFT JOIN ai_requests r ON r.id = a.request_id
    LEFT JOIN ai_asset_view_logs v ON v.asset_id = a.id
+   LEFT JOIN ai_asset_tag_relations atr ON atr.asset_id = a.id
+   LEFT JOIN asset_tags at ON at.id = atr.tag_id
    ${whereClause}
    GROUP BY a.id, u.chinese_name, ac.name, p.customer_name, p.project_name, r.request_code, r.title
    ${orderClause}`;
@@ -759,6 +808,14 @@ async function syncRequestTags(client, requestId, tagIds) {
   await client.query('DELETE FROM ai_request_tag_relations WHERE request_id = $1', [requestId]);
   for (const tagId of tagIds.map((id) => toInt(id)).filter(Boolean)) {
     await client.query('INSERT INTO ai_request_tag_relations (request_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [requestId, tagId]);
+  }
+}
+
+async function syncAssetTags(client, assetId, tagIds = []) {
+  await client.query('DELETE FROM ai_asset_tag_relations WHERE asset_id = $1', [assetId]);
+  const uniqueTagIds = [...new Set(tagIds.map((id) => toInt(id)).filter(Boolean))];
+  for (const tagId of uniqueTagIds) {
+    await client.query('INSERT INTO ai_asset_tag_relations (asset_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [assetId, tagId]);
   }
 }
 
