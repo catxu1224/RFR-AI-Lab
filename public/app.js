@@ -740,14 +740,19 @@ async function openAssetDetailModal(id) {
 async function showAssetPreview(id) {
   const data = await api(`/api/assets/${id}`);
   const asset = data.asset;
-  if (!asset.preview_image_data) {
+  const previewImages = assetPreviewImages(asset);
+  if (!previewImages.length) {
     showToast('该资产暂未上传预览图');
     return;
   }
   openModal(`${asset.asset_name} / 预览图`, `
     <div class="asset-preview-wrap">
-      <img class="asset-preview-image" src="${h(asset.preview_image_data)}" alt="${h(asset.asset_name)} 预览图">
-      <div class="label mt">${h(asset.preview_image_name || '资产预览图')}</div>
+      ${previewImages.map((image) => `
+        <figure class="asset-preview-item">
+          <img class="asset-preview-image" src="${h(image.data)}" alt="${h(asset.asset_name)} ${h(image.name)}">
+          <figcaption>${h(image.name || '资产预览图')}</figcaption>
+        </figure>
+      `).join('')}
     </div>
   `);
 }
@@ -760,18 +765,19 @@ async function saveQuickAsset(event) {
   delete body.logo_file;
   body.tag_ids = form.getAll('tag_ids').filter(Boolean);
   const logoFile = event.target.querySelector('input[name="logo_file"]')?.files?.[0];
-  const previewFile = event.target.querySelector('input[name="preview_file"]')?.files?.[0];
+  const previewFiles = [...(event.target.querySelector('input[name="preview_file"]')?.files || [])];
   if (logoFile) {
     const logo = await imageFilePayload(logoFile, 'Logo', 2);
     if (!logo) return;
     body.logo_image_data = logo.data;
     body.logo_image_name = logo.name;
   }
-  if (previewFile) {
-    const preview = await imageFilePayload(previewFile, '预览图', 4);
-    if (!preview) return;
-    body.preview_image_data = preview.data;
-    body.preview_image_name = preview.name;
+  if (previewFiles.length) {
+    const previews = await imageFilesPayload(previewFiles, '预览图', 4);
+    if (!previews) return;
+    body.preview_images = previews;
+    body.preview_image_data = previews[0]?.data || null;
+    body.preview_image_name = previews[0]?.name || null;
   }
   const id = event.target.dataset.id;
   await api(id ? `/api/assets/${id}` : '/api/assets', { method: id ? 'PATCH' : 'POST', body });
@@ -1111,7 +1117,7 @@ function assetQuickForm(id = 'quickAssetForm', asset = {}) {
     <div class="field full"><span class="label">资产标签</span><div class="checkbox-group">${assetTagCheckboxes(asset.tags || [])}</div></div>
     <div class="field full"><span class="label">访问/下载链接</span><input name="access_url" placeholder="https://..." value="${h(asset.access_url || asset.download_url || '')}"></div>
     <div class="field full"><span class="label">上传Logo</span><input name="logo_file" type="file" accept="image/*">${asset.logo_image_name ? `<span class="label">当前Logo：${h(asset.logo_image_name)}</span>` : ''}</div>
-    <div class="field full"><span class="label">上传预览图</span><input name="preview_file" type="file" accept="image/*">${asset.preview_image_name ? `<span class="label">当前预览图：${h(asset.preview_image_name)}</span>` : ''}</div>
+    <div class="field full"><span class="label">上传预览图</span><input name="preview_file" type="file" accept="image/*" multiple>${currentPreviewNames(asset)}</div>
     <div class="field full"><span class="label">资产描述</span><textarea name="description">${h(asset.description || '')}</textarea></div>
     <div class="field full"><button class="btn">${asset.id ? '保存资产' : '提交发布'}</button></div>
   </form>`;
@@ -1160,6 +1166,22 @@ function assetTagCheckboxes(selectedTags = []) {
       <span>${h(item.name)}</span>
     </label>
   `).join('');
+}
+
+function assetPreviewImages(asset) {
+  const images = Array.isArray(asset.preview_images) ? asset.preview_images : [];
+  const normalized = images
+    .filter((image) => image?.data)
+    .map((image) => ({ name: image.name || '资产预览图', data: image.data }));
+  if (!normalized.length && asset.preview_image_data) {
+    normalized.push({ name: asset.preview_image_name || '资产预览图', data: asset.preview_image_data });
+  }
+  return normalized.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN', { numeric: false, sensitivity: 'base' }));
+}
+
+function currentPreviewNames(asset) {
+  const names = assetPreviewImages(asset).map((image) => image.name).filter(Boolean);
+  return names.length ? `<span class="label">当前预览图：${h(names.join('、'))}</span>` : '';
 }
 
 function userOptions(selectedId = '') {
@@ -1273,6 +1295,17 @@ async function imageFilePayload(file, label, maxMb) {
     data: await fileToDataUrl(file),
     name: file.name
   };
+}
+
+async function imageFilesPayload(files, label, maxMb) {
+  const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: false, sensitivity: 'base' }));
+  const payloads = [];
+  for (const file of sortedFiles) {
+    const payload = await imageFilePayload(file, `${label} ${file.name}`, maxMb);
+    if (!payload) return null;
+    payloads.push(payload);
+  }
+  return payloads;
 }
 
 function fileToDataUrl(file) {

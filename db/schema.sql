@@ -118,6 +118,15 @@ CREATE TABLE IF NOT EXISTS ai_asset_access_requests (
   UNIQUE (asset_id, requester_id)
 );
 
+CREATE TABLE IF NOT EXISTS ai_asset_preview_images (
+  id SERIAL PRIMARY KEY,
+  asset_id INTEGER NOT NULL REFERENCES ai_assets(id) ON DELETE CASCADE,
+  image_data TEXT NOT NULL,
+  image_name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS ai_asset_tag_relations (
   asset_id INTEGER NOT NULL REFERENCES ai_assets(id) ON DELETE CASCADE,
   tag_id INTEGER NOT NULL REFERENCES asset_tags(id) ON DELETE CASCADE,
@@ -176,6 +185,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_wbs ON projects(wbs_code);
 CREATE INDEX IF NOT EXISTS idx_projects_o2e ON projects(o2e_code);
 CREATE INDEX IF NOT EXISTS idx_assets_status ON ai_assets(status);
 CREATE INDEX IF NOT EXISTS idx_assets_visibility ON ai_assets(visibility);
+CREATE INDEX IF NOT EXISTS idx_asset_preview_images_asset ON ai_asset_preview_images(asset_id);
 CREATE INDEX IF NOT EXISTS idx_asset_tag_relations_tag ON ai_asset_tag_relations(tag_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_id, read_at, created_at);
 
@@ -183,3 +193,11 @@ ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS preview_image_data TEXT;
 ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS preview_image_name TEXT;
 ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS logo_image_data TEXT;
 ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS logo_image_name TEXT;
+
+INSERT INTO ai_asset_preview_images (asset_id, image_data, image_name, sort_order)
+SELECT a.id, a.preview_image_data, COALESCE(a.preview_image_name, '资产预览图'), 0
+FROM ai_assets a
+WHERE a.preview_image_data IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM ai_asset_preview_images p WHERE p.asset_id = a.id
+  );

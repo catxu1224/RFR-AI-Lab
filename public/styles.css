@@ -1144,7 +1144,13 @@ tr:last-child td { border-bottom: 0; }
 
 .asset-preview-wrap {
   display: grid;
-  gap: 10px;
+  gap: 14px;
+}
+
+.asset-preview-item {
+  display: grid;
+  gap: 7px;
+  margin: 0;
 }
 
 .asset-preview-image {
@@ -1154,6 +1160,12 @@ tr:last-child td { border-bottom: 0; }
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f7faf8;
+}
+
+.asset-preview-item figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .toast {

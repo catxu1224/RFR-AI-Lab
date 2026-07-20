@@ -301,6 +301,7 @@ app.post('/api/assets', asyncHandler(async (req, res) => {
       ]
     );
     await syncAssetTags(client, result.rows[0].id, body.tag_ids || []);
+    await syncAssetPreviewImages(client, result.rows[0].id, body.preview_images || []);
     await client.query('INSERT INTO audit_logs (entity_type, entity_id, action, detail, actor_id) VALUES ($1, $2, $3, $4, $5)', ['asset', result.rows[0].id, '发布资产', body.asset_name, req.user.id]);
     const detail = await client.query(assetListSql('WHERE a.id = $1'), [result.rows[0].id]);
     return detail.rows[0];
@@ -321,6 +322,7 @@ app.patch('/api/assets/:id', asyncHandler(async (req, res) => {
       await client.query(`UPDATE ai_assets SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${values.length}`, values);
     }
     if (Array.isArray(req.body.tag_ids)) await syncAssetTags(client, id, req.body.tag_ids);
+    if (Array.isArray(req.body.preview_images)) await syncAssetPreviewImages(client, id, req.body.preview_images);
     await client.query('INSERT INTO audit_logs (entity_type, entity_id, action, detail, actor_id) VALUES ($1, $2, $3, $4, $5)', ['asset', id, '资产维护', JSON.stringify(req.body), req.user.id]);
     const result = await client.query(assetListSql('WHERE a.id = $1'), [id]);
     return result.rows[0] || current.rows[0];
@@ -771,18 +773,43 @@ function assetListSql(whereClause = '', orderClause = '', includePreview = false
     p.project_name,
     r.request_code,
     r.title AS request_title,
-    COALESCE(JSON_AGG(DISTINCT JSONB_BUILD_OBJECT('id', at.id, 'name', at.name)) FILTER (WHERE at.id IS NOT NULL), '[]') AS tags,
-    COUNT(DISTINCT v.id)::INT AS views
+    previews.preview_images,
+    tags.tags,
+    asset_views.views
    FROM ai_assets a
    LEFT JOIN users u ON u.id = a.owner_id
    LEFT JOIN asset_categories ac ON ac.id = a.category_id
    LEFT JOIN projects p ON p.id = a.project_id
    LEFT JOIN ai_requests r ON r.id = a.request_id
-   LEFT JOIN ai_asset_view_logs v ON v.asset_id = a.id
-   LEFT JOIN ai_asset_tag_relations atr ON atr.asset_id = a.id
-   LEFT JOIN asset_tags at ON at.id = atr.tag_id
+   LEFT JOIN LATERAL (
+     SELECT COUNT(*)::INT AS views
+     FROM ai_asset_view_logs v
+     WHERE v.asset_id = a.id
+   ) asset_views ON TRUE
+   LEFT JOIN LATERAL (
+     SELECT COALESCE(
+       JSON_AGG(JSON_BUILD_OBJECT('id', t.id, 'name', t.name) ORDER BY t.sort_order, t.id),
+       '[]'
+     ) AS tags
+     FROM ai_asset_tag_relations rel
+     JOIN asset_tags t ON t.id = rel.tag_id
+     WHERE rel.asset_id = a.id
+   ) tags ON TRUE
+   LEFT JOIN LATERAL (
+     SELECT COALESCE(
+       JSON_AGG(
+         JSON_BUILD_OBJECT(
+           'id', p.id,
+           'name', p.image_name${includePreview ? ", 'data', p.image_data" : ''}
+         )
+         ORDER BY LOWER(p.image_name), p.image_name, p.id
+       ),
+       '[]'
+     ) AS preview_images
+     FROM ai_asset_preview_images p
+     WHERE p.asset_id = a.id
+   ) previews ON TRUE
    ${whereClause}
-   GROUP BY a.id, u.chinese_name, ac.name, p.customer_name, p.project_name, r.request_code, r.title
    ${orderClause}`;
 }
 
@@ -816,6 +843,20 @@ async function syncAssetTags(client, assetId, tagIds = []) {
   const uniqueTagIds = [...new Set(tagIds.map((id) => toInt(id)).filter(Boolean))];
   for (const tagId of uniqueTagIds) {
     await client.query('INSERT INTO ai_asset_tag_relations (asset_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [assetId, tagId]);
+  }
+}
+
+async function syncAssetPreviewImages(client, assetId, images = []) {
+  await client.query('DELETE FROM ai_asset_preview_images WHERE asset_id = $1', [assetId]);
+  const sortedImages = [...images]
+    .filter((image) => image?.data)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN', { numeric: false, sensitivity: 'base' }));
+  for (const [index, image] of sortedImages.entries()) {
+    await client.query(
+      `INSERT INTO ai_asset_preview_images (asset_id, image_data, image_name, sort_order)
+       VALUES ($1, $2, $3, $4)`,
+      [assetId, image.data, image.name || `预览图-${index + 1}`, index + 1]
+    );
   }
 }
 
