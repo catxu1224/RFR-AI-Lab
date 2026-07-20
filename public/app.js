@@ -4,7 +4,8 @@ const state = {
   me: null,
   meta: null,
   filters: {},
-  pagination: {}
+  pagination: {},
+  assetView: 'list'
 };
 
 const navItems = [
@@ -64,6 +65,10 @@ function bindGlobalEvents() {
     if (action === 'approve-access') return reviewAccessRequest(id, 'approved');
     if (action === 'reject-access') return reviewAccessRequest(id, 'rejected');
     if (action === 'page-go') return changePage(target.dataset.pageKey, target.dataset.page);
+    if (action === 'asset-view') {
+      state.assetView = target.dataset.view || 'list';
+      return renderAssets();
+    }
     if (action === 'admin-sub') {
       state.adminSub = target.dataset.sub;
       return renderAdmin();
@@ -87,6 +92,7 @@ function bindGlobalEvents() {
     }
     if (form.id === 'assetFilters') {
       resetPage('assets');
+      resetPage('assetCards');
       return renderAssets();
     }
     if (form.id === 'learningFilters') {
@@ -258,35 +264,41 @@ async function renderAssets() {
     status: form.get('status') || 'online'
   });
   const data = await api(`/api/assets?${params}`);
+  const assetView = state.assetView || 'list';
   app.innerHTML = `
     ${pageHead('AI资产中心', '管理公开资产、非公开资产访问申请、资产发布、浏览量统计和注销。', `
       <button class="btn" data-action="new-asset">发布AI资产</button>
       <button class="btn secondary">访问申请审批</button>
     `)}
-    <form class="filter" id="assetFilters">
+    <form class="filter asset-filter-sticky" id="assetFilters">
       <input name="search" placeholder="搜索资产名称、负责人、描述" value="${h(params.get('search'))}">
       <select name="categoryId"><option value="">全部资产分类</option>${options(state.meta.assetCategories, params.get('categoryId'))}</select>
       <select name="visibility"><option value="">全部公开状态</option><option value="public" ${selected(params.get('visibility'), 'public')}>公开</option><option value="private" ${selected(params.get('visibility'), 'private')}>非公开</option></select>
       <select name="status"><option value="online" ${selected(params.get('status'), 'online')}>在线资产</option><option value="retired" ${selected(params.get('status'), 'retired')}>注销资产</option><option value="">全部状态</option></select>
       <button class="btn">查询</button>
     </form>
-    <div class="asset-grid">${data.assets.slice(0, 4).map(assetCard).join('')}</div>
-    <section class="asset-list mt">
-      ${table(
-        ['资产名称', '资产描述', '负责人', '分类', '公开状态', '当前状态', '浏览量', '操作'],
-        data.assets.map((a) => [
-          h(a.asset_name),
-          clippedText(a.description || '-'),
-          h(a.owner_name || '-'),
-          h(a.category_name || '-'),
-          a.visibility === 'public' ? badge('公开') : badge('非公开', 'warn'),
-          a.status === 'online' ? badge('在线') : badge('注销', 'off'),
-          h(a.views),
-          assetActions(a)
-        ]),
-        { pageKey: 'assets' }
-      )}
-    </section>
+    <div class="view-tabs">
+      <button class="${assetView === 'list' ? 'active' : ''}" data-action="asset-view" data-view="list" type="button" title="列表形式" aria-label="列表形式"><img src="/assets/icons/view-list.png" alt=""></button>
+      <button class="${assetView === 'cards' ? 'active' : ''}" data-action="asset-view" data-view="cards" type="button" title="卡片形式" aria-label="卡片形式"><img src="/assets/icons/view-cards.png" alt=""></button>
+    </div>
+    ${assetView === 'cards'
+      ? `<section class="asset-card-view mt">${pagedCards(data.assets, assetCard, 'assetCards', 'asset-grid')}</section>`
+      : `<section class="asset-list mt">
+          ${table(
+            ['资产名称', '资产描述', '负责人', '分类', '公开状态', '当前状态', '浏览量', '操作'],
+            data.assets.map((a) => [
+              h(a.asset_name),
+              clippedText(a.description || '-'),
+              h(a.owner_name || '-'),
+              h(a.category_name || '-'),
+              a.visibility === 'public' ? badge('公开') : badge('非公开', 'warn'),
+              a.status === 'online' ? badge('在线') : badge('注销', 'off'),
+              h(a.views),
+              assetActions(a)
+            ]),
+            { pageKey: 'assets' }
+          )}
+        </section>`}
   `;
 }
 
@@ -791,6 +803,7 @@ function renderDashboardCharts(data) {
   const greenSoft = '#a6d9bc';
   const muted = '#65736b';
   const gridLine = 'rgba(18, 148, 90, .12)';
+  const chartFont = '"Noto Sans SC", "Source Han Sans SC", "思源黑体", sans-serif';
   const charts = [];
 
   charts.push(renderBarChart('projectTypeChart', data.projectTypes, {
@@ -824,20 +837,20 @@ function renderDashboardCharts(data) {
         splitLine: { lineStyle: { color: gridLine } },
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { color: muted, fontFamily: 'DengXian, Arial', fontSize: 12 }
+        axisLabel: { color: muted, fontFamily: chartFont, fontSize: 12 }
       },
       yAxis: {
         type: 'category',
         data: labels,
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { color: '#202622', fontFamily: 'DengXian, Arial', fontSize: 12 }
+        axisLabel: { color: '#202622', fontFamily: chartFont, fontSize: 12 }
       },
       series: [{
         type: 'bar',
         data: values,
         barWidth: 8,
-        label: { show: true, position: 'right', color: '#202622', fontSize: 12, fontFamily: 'DengXian, Arial' },
+        label: { show: true, position: 'right', color: '#202622', fontSize: 12, fontFamily: chartFont },
         itemStyle: {
           borderRadius: [0, 6, 6, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
@@ -869,7 +882,7 @@ function renderDashboardCharts(data) {
         left: 0,
         itemWidth: 8,
         itemHeight: 8,
-        textStyle: { color: muted, fontSize: 12, fontFamily: 'DengXian, Arial' }
+        textStyle: { color: muted, fontSize: 12, fontFamily: chartFont }
       },
       series: [{
         type: 'pie',
@@ -880,7 +893,7 @@ function renderDashboardCharts(data) {
           formatter: (params) => `${Math.round((params.value / total) * 100)}%`,
           color: '#202622',
           fontSize: 12,
-          fontFamily: 'DengXian, Arial'
+          fontFamily: chartFont
         },
         labelLine: { lineStyle: { color: 'rgba(18, 148, 90, .32)' } },
         data: rows.map((x) => ({ name: x.name, value: Number(x.count || 0) }))
@@ -891,11 +904,19 @@ function renderDashboardCharts(data) {
 }
 
 function assetCard(asset) {
-  const visibility = asset.visibility === 'public' ? badge('公开') : badge('申请查看', 'warn');
+  const visibility = asset.visibility === 'public' ? badge('公开') : badge('非公开', 'warn');
+  const status = asset.status === 'online' ? badge('在线') : badge('注销', 'off');
   return `<div class="asset-card">
     <div class="asset-title">${assetLogo(asset)}${h(asset.asset_name)}</div>
-    <p class="muted">${h(asset.description || '')}</p>
-    <div class="meta-line">${visibility}<b>${h(asset.views || 0)} views</b></div>
+    <div class="asset-card-fields">
+      <div class="asset-field full"><span>资产描述</span><p>${h(asset.description || '-')}</p></div>
+      <div class="asset-field"><span>负责人</span><b>${h(asset.owner_name || '-')}</b></div>
+      <div class="asset-field"><span>分类</span><b>${h(asset.category_name || '-')}</b></div>
+      <div class="asset-field"><span>公开状态</span>${visibility}</div>
+      <div class="asset-field"><span>当前状态</span>${status}</div>
+      <div class="asset-field"><span>浏览量</span><b>${h(asset.views || 0)}</b></div>
+    </div>
+    <div class="asset-card-actions">${assetActions(asset)}</div>
   </div>`;
 }
 
