@@ -59,7 +59,7 @@ function bindGlobalEvents() {
     if (action === 'view-asset-detail') return openAssetDetailModal(id);
     if (action === 'show-asset-preview') return showAssetPreview(id);
     if (action === 'request-access') return requestAssetAccess(id);
-    if (action === 'open-asset') return openAsset(id);
+    if (action === 'open-asset') return openAsset(id, target.dataset.url);
     if (action === 'retire-asset') return retireAsset(id);
     if (action === 'open-message') return openMessage(id, target.dataset.route);
     if (action === 'approve-access') return reviewAccessRequest(id, 'approved');
@@ -714,9 +714,14 @@ async function reviewAccessRequest(id, status) {
   renderApprovals();
 }
 
-async function openAsset(id) {
+async function openAsset(id, rawUrl = '') {
+  const url = normalizeAssetUrl(rawUrl);
+  if (!url) {
+    showToast('该资产暂未配置访问链接');
+    return;
+  }
+  window.open(url, '_blank', 'noopener');
   await api(`/api/assets/${id}/view`, { method: 'POST' });
-  showToast('已记录浏览，实际链接会在正式环境打开');
 }
 
 async function openAssetDetailModal(id) {
@@ -1099,8 +1104,9 @@ function parameterActions(kind, id) {
 
 function assetActions(a) {
   const canEdit = state.me?.role === 'admin' || a.owner_id === state.me?.id;
+  const assetUrl = a.access_url || a.download_url || '';
   return `<div class="row-actions">
-    ${a.visibility === 'public' ? `<button class="btn slim secondary" data-action="open-asset" data-id="${a.id}">访问入口</button>` : `<button class="btn slim secondary" data-action="request-access" data-id="${a.id}">申请查看</button>`}
+    ${a.visibility === 'public' ? `<button class="btn slim secondary" data-action="open-asset" data-id="${a.id}" data-url="${h(assetUrl)}">访问入口</button>` : `<button class="btn slim secondary" data-action="request-access" data-id="${a.id}">申请查看</button>`}
     <button class="btn slim secondary" data-action="view-asset-detail" data-id="${a.id}">详情</button>
     <button class="btn slim secondary" data-action="show-asset-preview" data-id="${a.id}">预览图</button>
     ${canEdit ? `<button class="btn slim secondary" data-action="edit-asset" data-id="${a.id}">编辑</button>` : ''}
@@ -1182,6 +1188,15 @@ function assetPreviewImages(asset) {
 function currentPreviewNames(asset) {
   const names = assetPreviewImages(asset).map((image) => image.name).filter(Boolean);
   return names.length ? `<span class="label">当前预览图：${h(names.join('、'))}</span>` : '';
+}
+
+function normalizeAssetUrl(rawUrl) {
+  const value = String(rawUrl || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('//')) return `https:${value}`;
+  if (value.startsWith('/')) return `${location.origin}${value}`;
+  return `https://${value}`;
 }
 
 function userOptions(selectedId = '') {
