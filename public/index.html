@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RFR AI Lab</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span><span>RFR AI Lab</span></div>
+    <nav class="nav" id="nav"></nav>
+    <button class="message-button" id="messageButton" type="button" aria-label="消息">
+      <span class="message-icon" aria-hidden="true">✉︎</span>
+      <span class="message-dot" id="messageDot" hidden></span>
+    </button>
+    <div class="user-chip" id="userChip">ONLINE</div>
+  </header>
+
+  <main class="app-shell">
+    <section id="app"></section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <dialog id="modal" class="modal"></dialog>
+
+  <script src="/vendor/echarts/echarts.min.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
