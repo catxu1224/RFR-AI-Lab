@@ -273,8 +273,8 @@ app.get('/api/assets/:id', asyncHandler(async (req, res) => {
 app.post('/api/assets', asyncHandler(async (req, res) => {
   const body = req.body;
   const result = await query(
-    `INSERT INTO ai_assets (asset_name, owner_id, request_id, category_id, project_id, description, access_url, download_url, preview_image_data, preview_image_name, visibility, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'online')
+    `INSERT INTO ai_assets (asset_name, owner_id, request_id, category_id, project_id, description, access_url, download_url, logo_image_data, logo_image_name, preview_image_data, preview_image_name, visibility, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'online')
      RETURNING *`,
     [
       body.asset_name,
@@ -285,6 +285,8 @@ app.post('/api/assets', asyncHandler(async (req, res) => {
       body.description || '',
       body.access_url || null,
       body.download_url || null,
+      body.logo_image_data || null,
+      body.logo_image_name || null,
       body.preview_image_data || null,
       body.preview_image_name || null,
       body.visibility || 'public'
@@ -299,7 +301,7 @@ app.patch('/api/assets/:id', asyncHandler(async (req, res) => {
   const current = await query('SELECT * FROM ai_assets WHERE id = $1', [id]);
   if (!current.rowCount) return res.status(404).json({ error: '资产不存在' });
   if (!canMaintainAsset(req.user, current.rows[0])) return res.status(403).json({ error: '不能维护非本人负责的资产' });
-  const allowed = ['asset_name', 'description', 'access_url', 'download_url', 'preview_image_data', 'preview_image_name', 'visibility', 'status', 'category_id', 'project_id', 'version'];
+  const allowed = ['asset_name', 'description', 'access_url', 'download_url', 'logo_image_data', 'logo_image_name', 'preview_image_data', 'preview_image_name', 'visibility', 'status', 'category_id', 'project_id', 'version'];
   const { sets, values } = buildSetClause(allowed, req.body);
   if (!sets.length) return res.json({ asset: current.rows[0] });
   values.push(id);
@@ -708,6 +710,8 @@ function assetListSql(whereClause = '', orderClause = '', includePreview = false
     a.description,
     a.access_url,
     a.download_url,
+    a.logo_image_data,
+    a.logo_image_name,
     ${includePreview ? 'a.preview_image_data,' : ''}
     a.preview_image_name,
     a.visibility,

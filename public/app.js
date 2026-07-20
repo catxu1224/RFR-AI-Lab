@@ -149,31 +149,56 @@ async function render() {
 async function renderDashboard() {
   const data = await api('/api/dashboard');
   app.innerHTML = `
-    ${pageHead('首页 Dashboard', '集中查看 AI 需求、AI 资产、项目和用户的运营概况，并快速进入常用工作。', `
+    ${pageHead('首页 Dashboard', '把团队经验、方法论和项目资产沉淀为可复用的 AI 能力，并支持需求到资产的闭环运营。', `
       <button class="btn" data-action="new-request">新增AI需求</button>
       <button class="btn secondary" data-action="new-asset">发布AI资产</button>
       <button class="btn secondary" onclick="location.hash='learning'">学习天地</button>
     `)}
-    <div class="grid cols-4">
+    <section class="lab-hero">
+      <div class="hero-copy">
+        <span class="eyebrow">VISION & MISSION</span>
+        <h2>RFR AI Lab 能力中心</h2>
+        <p>以 AI 重塑金融风险与数据咨询服务，沉淀可演示、可复用、可复制的 AI 资产，赋能团队高效交付，助力客户实现价值跃迁。</p>
+        <div class="hero-actions">
+          <button class="btn" data-action="new-request">提交场景需求</button>
+          <button class="btn secondary" onclick="location.hash='assets'">浏览AI资产</button>
+        </div>
+      </div>
+      <div class="hero-visual" aria-label="RFR AI Lab capability map">
+        <div class="orbit"></div>
+        <div class="core">AI<br>能力中心</div>
+        <span class="node n1">客户需求</span>
+        <span class="node n2">场景挖掘</span>
+        <span class="node n3">Demo验证</span>
+        <span class="node n4">资产复用</span>
+      </div>
+    </section>
+
+    <div class="intro-card-grid">
+      ${introCard('业务赋能中心', '支持团队在风险、数据、监管、经营分析等方向拓展 AI 应用场景，形成更有穿透力的客户沟通和方案能力。')}
+      ${introCard('交付加速中心', '把 AI 嵌入调研、分析、建模、材料、测试、验证和知识沉淀环节，提升项目交付效率和质量稳定性。')}
+      ${introCard('客户价值中心', '帮助金融机构识别 AI 价值场景，推动 Demo、方案和交付资产在真实业务中落地。')}
+    </div>
+
+    <section class="roadmap-panel mt">
+      <div class="roadmap-head">
+        <div><span class="eyebrow">IMPLEMENTATION ROADMAP</span><h2>实施路线图</h2></div>
+        <p>以团队建设为起点，以场景资产化和 Demo 交付为抓手，形成市场、交付、客户赋能的闭环。</p>
+      </div>
+      <div class="roadmap-line">
+        ${roadmapStep(1, '能力中心启动', '明确团队定位、治理机制、工作节奏和核心成员职责。')}
+        ${roadmapStep(2, '交付团队组建', '建立 AI 交付小组，负责场景开发、Demo 建设和项目支持。')}
+        ${roadmapStep(3, '场景挖掘', '围绕风险、数据、监管、运营、文档、测试等方向梳理可识别场景。')}
+        ${roadmapStep(4, '任务分配', '建立场景责任人、优先级、版本计划和验收标准。')}
+        ${roadmapStep(5, '资产交付与推广', '推动 Demo 上架，形成可演示、可复用、可复制的 AI 解决方案资产。')}
+      </div>
+    </section>
+
+    <div class="grid dashboard-compact mt">
       ${statCard('AI 资产统计', data.stats.total_assets, `在线 ${data.stats.online_assets} / 注销 ${data.stats.retired_assets}`)}
       ${statCard('AI 需求统计', `${data.stats.active_requests} / ${data.stats.total_requests}`, '流程中 / 总需求')}
-      ${statCard('项目个数', data.stats.projects, '已维护项目')}
-      ${statCard('用户数', data.stats.users, '平台注册用户')}
     </div>
-    <div class="grid cols-3 mt">
-      <section class="panel">
-        <div class="panel-title">资产按项目类型</div>
-        <div class="panel-body"><div class="chart-box" id="projectTypeChart"></div></div>
-      </section>
-      <section class="panel">
-        <div class="panel-title">AI 资产类型</div>
-        <div class="panel-body"><div class="chart-box tall" id="assetTypeChart"></div></div>
-      </section>
-      <section class="panel">
-        <div class="panel-title">需求按进度</div>
-        <div class="panel-body"><div class="chart-box" id="requestStatusChart"></div></div>
-      </section>
-    </div>
+
     <section class="panel mt">
       <div class="panel-title">热门 AI 资产入口 <span class="label">Top 8 by views</span></div>
       <div class="panel-body">
@@ -181,7 +206,6 @@ async function renderDashboard() {
       </div>
     </section>
   `;
-  renderDashboardCharts(data);
 }
 
 async function renderRequests() {
@@ -700,18 +724,20 @@ async function saveQuickAsset(event) {
   const form = new FormData(event.target);
   const body = Object.fromEntries(form.entries());
   delete body.preview_file;
-  const file = event.target.querySelector('input[name="preview_file"]')?.files?.[0];
-  if (file) {
-    if (!file.type.startsWith('image/')) {
-      showToast('请上传图片格式的预览图');
-      return;
-    }
-    if (file.size > 4 * 1024 * 1024) {
-      showToast('预览图请控制在 4MB 以内');
-      return;
-    }
-    body.preview_image_data = await fileToDataUrl(file);
-    body.preview_image_name = file.name;
+  delete body.logo_file;
+  const logoFile = event.target.querySelector('input[name="logo_file"]')?.files?.[0];
+  const previewFile = event.target.querySelector('input[name="preview_file"]')?.files?.[0];
+  if (logoFile) {
+    const logo = await imageFilePayload(logoFile, 'Logo', 2);
+    if (!logo) return;
+    body.logo_image_data = logo.data;
+    body.logo_image_name = logo.name;
+  }
+  if (previewFile) {
+    const preview = await imageFilePayload(previewFile, '预览图', 4);
+    if (!preview) return;
+    body.preview_image_data = preview.data;
+    body.preview_image_name = preview.name;
   }
   const id = event.target.dataset.id;
   await api(id ? `/api/assets/${id}` : '/api/assets', { method: id ? 'PATCH' : 'POST', body });
@@ -732,6 +758,22 @@ function pageHead(title, desc, actions = '') {
 
 function statCard(label, value, trend) {
   return `<div class="card"><div class="label">${h(label)}</div><div class="value">${h(value)}</div><div class="trend">${h(trend)}</div></div>`;
+}
+
+function introCard(title, text) {
+  return `<article class="intro-card">
+    <div class="intro-icon">${h(title.slice(0, 2))}</div>
+    <h3>${h(title)}</h3>
+    <p>${h(text)}</p>
+  </article>`;
+}
+
+function roadmapStep(index, title, text) {
+  return `<article class="roadmap-step">
+    <span>${h(index)}</span>
+    <h3>${h(title)}</h3>
+    <p>${h(text)}</p>
+  </article>`;
 }
 
 function barRow(label, value, max) {
@@ -851,10 +893,22 @@ function renderDashboardCharts(data) {
 function assetCard(asset) {
   const visibility = asset.visibility === 'public' ? badge('公开') : badge('申请查看', 'warn');
   return `<div class="asset-card">
-    <div class="asset-title"><span class="logo">${h(asset.asset_name.slice(0, 3).toUpperCase())}</span>${h(asset.asset_name)}</div>
+    <div class="asset-title">${assetLogo(asset)}${h(asset.asset_name)}</div>
     <p class="muted">${h(asset.description || '')}</p>
     <div class="meta-line">${visibility}<b>${h(asset.views || 0)} views</b></div>
   </div>`;
+}
+
+function assetLogo(asset) {
+  if (asset.logo_image_data) {
+    return `<span class="logo image-logo"><img src="${h(asset.logo_image_data)}" alt="${h(asset.asset_name)} Logo"></span>`;
+  }
+  return `<span class="logo">${h(assetAbbr(asset.asset_name))}</span>`;
+}
+
+function assetAbbr(name) {
+  const compact = String(name || 'AI').replace(/[^a-z0-9]/gi, '').toUpperCase();
+  return (compact || 'AI').slice(0, 3);
 }
 
 function materialCard(material) {
@@ -996,6 +1050,7 @@ function assetQuickForm(id = 'quickAssetForm', asset = {}) {
     <div class="field"><span class="label">资产分类</span><select name="category_id">${options(state.meta.assetCategories, asset.category_id)}</select></div>
     <div class="field"><span class="label">公开设置</span><select name="visibility"><option value="public" ${selected(asset.visibility, 'public')}>公开：展示访问入口</option><option value="private" ${selected(asset.visibility, 'private')}>不公开：需要申请查看</option></select></div>
     <div class="field full"><span class="label">访问/下载链接</span><input name="access_url" placeholder="https://..." value="${h(asset.access_url || asset.download_url || '')}"></div>
+    <div class="field full"><span class="label">上传Logo</span><input name="logo_file" type="file" accept="image/*">${asset.logo_image_name ? `<span class="label">当前Logo：${h(asset.logo_image_name)}</span>` : ''}</div>
     <div class="field full"><span class="label">上传预览图</span><input name="preview_file" type="file" accept="image/*">${asset.preview_image_name ? `<span class="label">当前预览图：${h(asset.preview_image_name)}</span>` : ''}</div>
     <div class="field full"><span class="label">资产描述</span><textarea name="description">${h(asset.description || '')}</textarea></div>
     <div class="field full"><button class="btn">${asset.id ? '保存资产' : '提交发布'}</button></div>
@@ -1126,6 +1181,21 @@ function setMessageUnread(count) {
   if (!messageDot) return;
   messageDot.hidden = Number(count || 0) <= 0;
   messageButton?.setAttribute('title', Number(count || 0) > 0 ? `消息：${count} 条未读` : '消息');
+}
+
+async function imageFilePayload(file, label, maxMb) {
+  if (!file.type.startsWith('image/')) {
+    showToast(`请上传图片格式的${label}`);
+    return null;
+  }
+  if (file.size > maxMb * 1024 * 1024) {
+    showToast(`${label}请控制在 ${maxMb}MB 以内`);
+    return null;
+  }
+  return {
+    data: await fileToDataUrl(file),
+    name: file.name
+  };
 }
 
 function fileToDataUrl(file) {

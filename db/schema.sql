@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS ai_assets (
   description TEXT NOT NULL DEFAULT '',
   access_url TEXT,
   download_url TEXT,
+  logo_image_data TEXT,
+  logo_image_name TEXT,
   preview_image_data TEXT,
   preview_image_name TEXT,
   visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private')),
@@ -165,3 +167,5 @@ CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipien
 
 ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS preview_image_data TEXT;
 ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS preview_image_name TEXT;
+ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS logo_image_data TEXT;
+ALTER TABLE ai_assets ADD COLUMN IF NOT EXISTS logo_image_name TEXT;
