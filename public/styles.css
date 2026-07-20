@@ -626,6 +626,39 @@ select[multiple] {
   padding: 6px 10px;
 }
 
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 0;
+}
+
+.check-option {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(18, 148, 90, .20);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .86);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.check-option input {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+
+.check-option span {
+  line-height: 1.3;
+}
+
 input:focus, select:focus, textarea:focus {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(18, 148, 90, .10);

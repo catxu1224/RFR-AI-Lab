@@ -1108,7 +1108,7 @@ function assetQuickForm(id = 'quickAssetForm', asset = {}) {
     <div class="field full"><span class="label">资产名称</span><input name="asset_name" required placeholder="例如 Report Agent" value="${h(asset.asset_name || '')}"></div>
     <div class="field"><span class="label">资产分类</span><select name="category_id">${options(state.meta.assetCategories, asset.category_id)}</select></div>
     <div class="field"><span class="label">公开设置</span><select name="visibility"><option value="public" ${selected(asset.visibility, 'public')}>公开：展示访问入口</option><option value="private" ${selected(asset.visibility, 'private')}>不公开：需要申请查看</option></select></div>
-    <div class="field full"><span class="label">资产标签</span><select name="tag_ids" multiple size="3">${multiOptions(state.meta.assetTags, (asset.tags || []).map((tag) => tag.id))}</select></div>
+    <div class="field full"><span class="label">资产标签</span><div class="checkbox-group">${assetTagCheckboxes(asset.tags || [])}</div></div>
     <div class="field full"><span class="label">访问/下载链接</span><input name="access_url" placeholder="https://..." value="${h(asset.access_url || asset.download_url || '')}"></div>
     <div class="field full"><span class="label">上传Logo</span><input name="logo_file" type="file" accept="image/*">${asset.logo_image_name ? `<span class="label">当前Logo：${h(asset.logo_image_name)}</span>` : ''}</div>
     <div class="field full"><span class="label">上传预览图</span><input name="preview_file" type="file" accept="image/*">${asset.preview_image_name ? `<span class="label">当前预览图：${h(asset.preview_image_name)}</span>` : ''}</div>
@@ -1148,6 +1148,18 @@ function options(items, selectedId = '') {
 function multiOptions(items, selectedIds = []) {
   const selectedSet = new Set((selectedIds || []).map((id) => String(id)));
   return (items || []).map((item) => `<option value="${item.id}" ${selectedSet.has(String(item.id)) ? 'selected' : ''}>${h(item.name)}</option>`).join('');
+}
+
+function assetTagCheckboxes(selectedTags = []) {
+  const selectedSet = new Set((selectedTags || []).map((tag) => String(tag.id || tag)));
+  const items = state.meta.assetTags || [];
+  if (!items.length) return '<span class="muted">暂无可选资产标签</span>';
+  return items.map((item) => `
+    <label class="check-option">
+      <input type="checkbox" name="tag_ids" value="${item.id}" ${selectedSet.has(String(item.id)) ? 'checked' : ''}>
+      <span>${h(item.name)}</span>
+    </label>
+  `).join('');
 }
 
 function userOptions(selectedId = '') {
