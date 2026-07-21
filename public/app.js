@@ -209,7 +209,7 @@ async function renderDashboard() {
     <section class="panel mt">
       <div class="panel-title">热门 AI 资产入口 <span class="label">Top 8 by views</span></div>
       <div class="panel-body">
-        <div class="asset-grid">${data.hotAssets.map(assetCard).join('')}</div>
+        <div class="asset-grid dashboard-asset-grid">${data.hotAssets.map(dashboardAssetCard).join('')}</div>
       </div>
     </section>
   `;
@@ -958,6 +958,24 @@ function assetCard(asset) {
   </div>`;
 }
 
+function dashboardAssetCard(asset) {
+  const visibility = asset.visibility === 'public' ? badge('公开') : badge('非公开', 'warn');
+  return `<div class="asset-card asset-card-compact">
+    <div class="asset-title">
+      <div class="asset-title-main">${assetLogo(asset)}<span>${h(asset.asset_name)}</span></div>
+      <div class="asset-views"><span>浏览量</span><b>${h(asset.views || 0)}</b></div>
+    </div>
+    <div class="asset-card-fields">
+      <div class="asset-meta-row compact">
+        <div class="asset-field"><span>分类</span><b>${h(asset.category_name || '-')}</b></div>
+        <div class="asset-field"><span>公开状态</span>${visibility}</div>
+      </div>
+      <div class="asset-field full"><span>标签</span><div class="asset-tags">${tagList(asset.tags) || '-'}</div></div>
+    </div>
+    <div class="asset-card-actions">${dashboardAssetActions(asset)}</div>
+  </div>`;
+}
+
 function assetLogo(asset) {
   if (asset.logo_image_data) {
     return `<span class="logo image-logo"><img src="${h(asset.logo_image_data)}" alt="${h(asset.asset_name)} Logo"></span>`;
@@ -1111,6 +1129,14 @@ function assetActions(a) {
     <button class="btn slim secondary" data-action="show-asset-preview" data-id="${a.id}">预览图</button>
     ${canEdit ? `<button class="btn slim secondary" data-action="edit-asset" data-id="${a.id}">编辑</button>` : ''}
     ${canEdit ? `<button class="btn slim danger" data-action="retire-asset" data-id="${a.id}">注销</button>` : ''}
+  </div>`;
+}
+
+function dashboardAssetActions(a) {
+  const assetUrl = a.access_url || a.download_url || '';
+  return `<div class="row-actions">
+    <button class="btn slim secondary" data-action="open-asset" data-id="${a.id}" data-url="${h(assetUrl)}">访问入口</button>
+    <button class="btn slim secondary" data-action="view-asset-detail" data-id="${a.id}">详情</button>
   </div>`;
 }
 

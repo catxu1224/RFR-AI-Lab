@@ -838,7 +838,7 @@ tr:last-child td { border-bottom: 0; }
 
 .asset-grid, .material-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -858,6 +858,11 @@ tr:last-child td { border-bottom: 0; }
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.asset-card-compact {
+  min-height: 158px;
+  gap: 10px;
 }
 
 .asset-card::before, .material-card::before {
@@ -921,6 +926,10 @@ tr:last-child td { border-bottom: 0; }
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px 10px;
+}
+
+.asset-meta-row.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .asset-field {
